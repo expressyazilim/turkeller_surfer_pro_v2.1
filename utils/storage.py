@@ -1,30 +1,34 @@
-import os
 import json
+import os
 
 HISTORY_FILE = "scan_history.json"
 
-def save_report(item):
-    history = []
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    history = json.loads(content)
-        except Exception:
+def save_report(filename, lat, lon, z, timestamp):
+    data = {
+        "filename": filename,
+        "lat": lat,
+        "lon": lon,
+        "z": z,
+        "timestamp": timestamp
+    }
+    try:
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, "r") as f:
+                history = json.load(f)
+        else:
             history = []
-    history.insert(0, item)
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception:
+        history = []
+
+    history.append(data)
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(history, f, indent=2)
 
 def load_history():
     if not os.path.exists(HISTORY_FILE):
         return []
     try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content:
-                return []
-            return json.loads(content)
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
     except Exception:
         return []
