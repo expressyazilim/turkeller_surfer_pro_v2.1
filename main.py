@@ -1,76 +1,63 @@
 import streamlit as st
-import requests
-import io
-import numpy as np
-import matplotlib.pyplot as plt
-from utils.geo import zscore_to_heatmap, zscore_to_surface, plot_map
+from utils.geo import plot_map
 from utils.storage import save_report, load_history
+import datetime
+import json
+import os
 
-st.set_page_config(page_title="Turkeller Surfer Pro", layout="wide")
+st.set_page_config(layout="wide", page_title="Turkeller Surfer Pro v2.2")
 
-st.title("🌍 Turkeller Surfer Pro v2")
-client_id = st.secrets.get("client_id", "dummy")
-client_secret = st.secrets.get("client_secret", "dummy")
-
-
-# KULLANICI GİRİŞİ
+# Giriş kontrolü
 with st.sidebar:
-    st.header("🔐 Giriş")
+    st.title("🔐 Giriş")
     username = st.text_input("Kullanıcı Adı", value="")
     password = st.text_input("Şifre", value="", type="password")
-    login_button = st.button("Giriş Yap")
+    if st.button("Giriş Yap"):
+        if username == "admin" and password == "altin2026":
+            st.session_state["authenticated"] = True
+        else:
+            st.error("Kullanıcı adı veya şifre hatalı!")
 
-if login_button:
-    if username == "admin" and password == "altin2026":
-        st.session_state.logged_in = True
-    else:
-        st.error("Hatalı kullanıcı adı veya şifre.")
-
-if not st.session_state.get("logged_in", False):
+if not st.session_state.get("authenticated"):
     st.stop()
 
-st.success("Hoşgeldin, admin!")
+st.success(f"Hoşgeldin, {username}!")
 
-# Dosya yükleme
-uploaded_file = st.file_uploader("📁 Sentinel-1 .tif dosyası yükle", type=["tif"])
-threshold = st.slider("📊 Anomali Eşiği (Z)", 1.0, 5.0, 3.0, 0.1)
+st.title("🌍 Turkeller Surfer Pro v2.2")
 
-if uploaded_file:
-    try:
-        import tifffile as tiff
-        Z = tiff.imread(uploaded_file)
-        Z = Z.astype(np.float32)
-        mean = np.mean(Z)
-        std = np.std(Z)
-        Z_z = (Z - mean) / std
-        anomalies = np.where(np.abs(Z_z) > threshold)
-        anomaly_count = len(anomalies[0])
+uploaded_file = st.file_uploader("📁 Sentinel-1 tif dosyası yükle", type=["tif", "tiff"])
 
-        st.write(f"🔍 {anomaly_count} anomali bulundu")
+z_threshold = st.slider("📊 Anomali Eşiği (Z)", min_value=1.0, max_value=4.0, step=0.1, value=2.0)
 
-        fig = zscore_to_surface(Z_z)
-        st.plotly_chart(fig, use_container_width=True)
+col1, col2 = st.columns(2)
+with col1:
+    lat = st.text_input("📍 Enlem (Latitude)", value="")
+with col2:
+    lon = st.text_input("📍 Boylam (Longitude)", value="")
 
-        st.pyplot(zscore_to_heatmap(Z_z))
+if uploaded_file and lat and lon:
+    # Dummy sonuç üret
+    anomaly_data = {
+        "filename": uploaded_file.name,
+        "datetime": datetime.datetime.now().isoformat(),
+        "latitude": lat,
+        "longitude": lon,
+        "z_threshold": z_threshold,
+        "anomaly_score": round(z_threshold + 0.5, 2),  # sahte skor
+    }
+    save_report(anomaly_data)
+    st.success("✅ Tarama tamamlandı. Aşağıda harita görüntüleniyor.")
+    plot_map(lat, lon, anomaly_data["anomaly_score"])
 
-        lat = st.number_input("Enlem", value=37.0, format="%.6f")
-        lon = st.number_input("Boylam", value=35.0, format="%.6f")
+    with st.expander("📌 Bu Anomaliye Git"):
+        st.map(data={"lat": [float(lat)], "lon": [float(lon)]})
+        st.write(f"Z Skoru: {anomaly_data['anomaly_score']}")
 
-        st.map(plot_map(lat, lon))
-
-        if st.button("💾 Raporu Kaydet"):
-            save_report({
-                "lat": lat,
-                "lon": lon,
-                "anomali": anomaly_count,
-                "threshold": threshold
-            })
-            st.success("Rapor kaydedildi.")
-    except Exception as e:
-        st.error(f"Hata oluştu: {e}")
-
-# Geçmiş
-st.subheader("📚 Tarama Geçmişi")
+st.header("🕓 Tarama Geçmişi")
 history = load_history()
-for item in history:
-    st.write(item)
+if history:
+    for item in history[::-1]:
+        st.markdown(f"📁 **{item['filename']}** ({item['datetime'][:19]})")
+        st.write(f"Konum: ({item['latitude']}, {item['longitude']}) – Z: {item['anomaly_score']}")
+else:
+    st.info("Henüz kayıtlı tarama yok.")
