@@ -17,11 +17,11 @@ client_secret = st.secrets.get("client_secret", "dummy")
 with st.sidebar:
     st.header("🔐 Giriş")
     username = st.text_input("Kullanıcı Adı", value="")
-    password = st.text_input("Şifre", value="", type="Altin2026")
+    password = st.text_input("Şifre", value="", type="password")
     login_button = st.button("Giriş Yap")
 
 if login_button:
-    if username == "admin" and password == "1234":
+    if username == "admin" and password == "altin2026":
         st.session_state.logged_in = True
     else:
         st.error("Hatalı kullanıcı adı veya şifre.")
