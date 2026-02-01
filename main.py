@@ -17,7 +17,7 @@ client_secret = st.secrets.get("client_secret", "dummy")
 with st.sidebar:
     st.header("🔐 Giriş")
     username = st.text_input("admin")
-    password = st.text_input("Şifre", type="altin2026")
+    password = st.text_input("Şifre", value="", type="password")
     login_button = st.button("Giriş Yap")
 
 if login_button:
