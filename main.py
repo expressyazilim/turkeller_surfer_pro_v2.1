@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from utils.geo import zscore_to_heatmap, zscore_to_surface, plot_map
 from utils.storage import save_report, load_history
 
+client_id = st.secrets.get("client_id", "dummy")
+client_secret = st.secrets.get("client_secret", "dummy")
+
 st.set_page_config(page_title="Turkeller Surfer Pro", layout="wide")
 
 st.title("🌍 Turkeller Surfer Pro v2")
