@@ -1,26 +1,13 @@
-import plotly.graph_objects as go
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 
-def zscore_to_heatmap(Z_z):
-    plt.figure(figsize=(6,4))
-    plt.imshow(Z_z, origin="lower", cmap="RdBu")
-    plt.colorbar(label="Z")
-    plt.title("Z-Skor Heatmap")
-    plt.tight_layout()
-    return plt
+def zscore_to_heatmap(z, threshold=2.0):
+    mask = np.abs(z) >= threshold
+    z_masked = np.where(mask, z, np.nan)
 
-def zscore_to_surface(Z_z):
-    H, W = Z_z.shape
-    X, Y = np.meshgrid(np.arange(W), np.arange(H))
-    fig = go.Figure(data=[
-        go.Surface(z=Z_z, x=X, y=Y, colorscale="RdBu", showscale=True)
-    ])
-    fig.update_layout(title="3D Z-Surface", scene=dict(
-        xaxis_title="X",
-        yaxis_title="Y",
-        zaxis_title="Z"))
+    fig, ax = plt.subplots()
+    cax = ax.imshow(z_masked, cmap='seismic', vmin=-np.nanmax(np.abs(z)), vmax=np.nanmax(np.abs(z)))
+    fig.colorbar(cax, ax=ax, orientation='vertical', shrink=0.7, label="Z-Score")
+    ax.set_title("Pozitif / Negatif Anomali Heatmap")
+    ax.axis('off')
     return fig
-
-def plot_map(lat, lon):
-    return [{"lat": lat, "lon": lon}]
