@@ -42,25 +42,23 @@ if not st.session_state.auth:
 if "focus_lat" not in st.session_state: st.session_state.focus_lat = None
 if "focus_lon" not in st.session_state: st.session_state.focus_lon = None
 if "focus_label" not in st.session_state: st.session_state.focus_label = None
+if "coord_str" not in st.session_state: st.session_state.coord_str = "40.1048440 27.7690640"
 
 # -------------------------
 # UI
 # -------------------------
 st.title("🛰️ Turkeller Surfer Pro")
-st.caption("Sentinel-1 VV | Pozitif/Negatif anomali | Renkli 2D Heatmap | ‘Analize Başla’ stabil akış")
+st.caption("VV dB + POS/NEG anomali | 2D şekilli overlay | 3D surface | isimli kayıt")
 
-# canlı konum query param’dan geldiyse inputa bas
+# query paramdan gelen konum varsa inputa uygula
 qp_lat, qp_lon = apply_qp_location()
-
-default_coord = "40.1048440 27.7690640"
-if "coord_str" not in st.session_state:
-    st.session_state.coord_str = default_coord
-
 if qp_lat is not None and qp_lon is not None:
     st.session_state.coord_str = f"{qp_lat:.7f} {qp_lon:.7f}"
 
 with st.form("controls", clear_on_submit=False):
-    coord_in = st.text_input("📌 Koordinat (tek kutu) — örn: `40.1048440 27.7690640`", value=st.session_state.coord_str)
+    scan_name = st.text_input("📝 Tarama Adı (kayda isim ver)", value="", placeholder="Örn: Bahçe-1 / Kazı-2 / Deneme-01")
+
+    coord_in = st.text_input("📌 Koordinat — örn: `40.1048440 27.7690640`", value=st.session_state.coord_str)
     st.session_state.coord_str = coord_in
     lat_val, lon_val = parse_coord_pair(coord_in)
 
@@ -94,13 +92,17 @@ with st.form("controls", clear_on_submit=False):
     submitted = st.form_submit_button("🔍 Analize Başla", use_container_width=True)
 
 st.divider()
-geolocation_button("📍 Canlı Konumu Çek (mobil)")
+geolocation_button()
 
-if st.button("🧹 Odak Temizle", use_container_width=True):
-    st.session_state.focus_lat = None
-    st.session_state.focus_lon = None
-    st.session_state.focus_label = None
-    st.rerun()
+cA, cB = st.columns(2)
+with cA:
+    if st.button("🧹 Odak Temizle", use_container_width=True):
+        st.session_state.focus_lat = None
+        st.session_state.focus_lon = None
+        st.session_state.focus_label = None
+        st.rerun()
+with cB:
+    st.caption("İpucu: Mobilde izin vermezse konumu elle gir veya `?glat=..&glon=..` ile test et.")
 
 # -------------------------
 # ANALYZE
@@ -125,9 +127,9 @@ if submitted:
             ranked1 = r1["ranked"]
             topN1 = ranked1[: int(topn)]
 
-            used = (bbox1, r1)
+            used_bbox, used_r = bbox1, r1
             refined = False
-            cap2 = None
+            cap_used = int(cap_m)
 
             # 2) oto refine
             if auto_refine and len(topN1) > 0 and cap_m > 25:
@@ -142,61 +144,65 @@ if submitted:
                     z_mode, float(thr),
                     bool(posneg),
                 )
-                used = (bbox2, r2)
+                used_bbox, used_r = bbox2, r2
                 refined = True
+                cap_used = int(cap2)
+                st.success(f"✅ Oto Refine: Top1 merkezine {cap2}m ile tekrar tarandı.")
 
-            bbox, r = used
-            Z_db_clip = r["Z_db_clip"]
-            X = r["X"]
-            Y = r["Y"]
-            Z_z = r["Z_z"]
-            ranked = r["ranked"]
+            Z_db_clip = used_r["Z_db_clip"]
+            X = used_r["X"]
+            Y = used_r["Y"]
+            Z_z = used_r["Z_z"]
+            ranked = used_r["ranked"]
             topN = ranked[: int(topn)]
-            pos_mask = r["pos_mask"]
-            neg_mask = r["neg_mask"]
+            pos_mask = used_r["pos_mask"]
+            neg_mask = used_r["neg_mask"]
 
-            if refined:
-                st.success(f"✅ Oto Refine yapıldı: Top1 merkezine {cap2}m ile tekrar tarandı.")
-
-            # ----- 2D HEATMAP (Renkli + POS/NEG kontur)
-            st.subheader("🗺️ 2D Heatmap (POS/NEG renkli kontur)")
+            # =========================
+            # 2D HEATMAP (ŞEKİL GİBİ OVERLAY)
+            # =========================
+            st.subheader("🗺️ 2D Heatmap (anomali şekilleri)")
 
             fig = go.Figure()
+
+            # Zemin VV dB
             fig.add_trace(go.Heatmap(
                 z=Z_db_clip,
                 x=X[0, :],
                 y=Y[:, 0],
                 colorbar=dict(title="VV (dB)"),
-                name="VV dB"
+                name="VV"
             ))
 
-            # POS kontur (kırmızı)
+            # POS filled overlay (beyaz dolgu + kırmızı border)
             if np.any(pos_mask):
                 fig.add_trace(go.Contour(
                     z=pos_mask.astype(int),
                     x=X[0, :],
                     y=Y[:, 0],
                     showscale=False,
-                    contours=dict(start=0.5, end=0.5, size=1),
+                    contours=dict(start=0.5, end=0.5, size=1, coloring="fill"),
+                    colorscale=[[0.0, "rgba(0,0,0,0)"], [1.0, "rgba(255,255,255,0.92)"]],
                     line=dict(width=2, color="red"),
                     hoverinfo="skip",
                     name="POS"
                 ))
 
-            # NEG kontur (mavi)
+            # NEG filled overlay (beyaz dolgu + mavi border)
             if np.any(neg_mask):
                 fig.add_trace(go.Contour(
                     z=neg_mask.astype(int),
                     x=X[0, :],
                     y=Y[:, 0],
                     showscale=False,
-                    contours=dict(start=0.5, end=0.5, size=1),
+                    contours=dict(start=0.5, end=0.5, size=1, coloring="fill"),
+                    colorscale=[[0.0, "rgba(0,0,0,0)"], [1.0, "rgba(255,255,255,0.92)"]],
                     line=dict(width=2, color="deepskyblue"),
                     hoverinfo="skip",
                     name="NEG"
                 ))
 
-            # TopN işaretleri
+            # TopN işaretleri (POS/NEG renkle)
             for i, t in enumerate(topN, start=1):
                 fig.add_trace(go.Scatter(
                     x=[t["target_lon"]],
@@ -221,48 +227,63 @@ if submitted:
                 ))
 
             fig.update_layout(
-                height=560,
+                height=520,
                 margin=dict(l=0, r=0, t=30, b=0),
                 xaxis_title="Boylam",
                 yaxis_title="Enlem",
-                title="2D Heatmap + POS/NEG Anomali"
+                title="2D Isı Haritası + POS/NEG Şekilli Overlay"
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # ----- TOPN LIST + “Anomaliye Git”
-            st.subheader(f"🎯 Top {topn} Hedef (TARGET koordinatı)")
+            # =========================
+            # 3D SURFACE
+            # =========================
+            st.subheader("🧊 3D Surface (VV dB)")
+            surf = go.Figure(data=[go.Surface(z=Z_db_clip, x=X, y=Y)])
+            surf.update_layout(height=520, margin=dict(l=0, r=0, t=30, b=0))
+            st.plotly_chart(surf, use_container_width=True)
+
+            # =========================
+            # TOPN LIST (Z / DERİNLİK + BUTONLAR)
+            # =========================
+            st.subheader(f"🎯 Top {topn} Hedef (Harita/Kopya = TARGET)")
 
             if not topN:
                 st.info("Bu eşikte anomali bulunamadı. Eşiği düşürmeyi deneyebilirsin.")
             else:
                 for i, t in enumerate(topN, start=1):
-                    tag = "🟥 POS" if t["type"] == "POS" else "🟦 NEG"
+                    tag = "🟢 POS" if t["type"] == "POS" else "🔴 NEG"
+                    # “derinlik” olarak: peak_z (işaretli) + rel_depth (göreceli)
                     st.markdown(
-                        f"**#{i} {tag}** | score=`{t['score']:.2f}` | peak z=`{t['peak_z']:.2f}` | alan=`{t['area']}` px | "
-                        f"Z(göreceli)=`{t['rel_depth']:.2f}`"
+                        f"**#{i} {tag}** | score=`{t['score']:.2f}` | **peak z=`{t['peak_z']:.2f}`** | "
+                        f"alan=`{t['area']}` px | derinlik(göreceli)=`{t['rel_depth']:.2f}`"
                     )
                     st.code(f"{t['target_lat']:.8f} {t['target_lon']:.8f}", language="text")
 
-                    cA, cB = st.columns(2)
-                    with cA:
+                    c1, c2 = st.columns(2)
+                    with c1:
                         if st.button("📍 Anomaliye Git", key=f"goto_{i}", use_container_width=True):
                             st.session_state.focus_lat = t["target_lat"]
                             st.session_state.focus_lon = t["target_lon"]
                             st.session_state.focus_label = f"#{i}"
                             st.rerun()
-                    with cB:
+                    with c2:
                         maps_url = f"https://www.google.com/maps/search/?api=1&query={t['target_lat']},{t['target_lon']}"
                         st.link_button("🌍 Haritada Aç", maps_url, use_container_width=True)
 
                     st.divider()
 
-            # ----- geçmişe kaydet (tarama konumu)
+            # =========================
+            # SAVE HISTORY (İSİMLİ + EŞİK + ÇAP + TARİH)
+            # =========================
             append_history(
+                name=scan_name.strip(),
                 lat=float(lat_val),
                 lon=float(lon_val),
-                cap_m=int(cap_m if not refined else cap2),
+                cap_m=int(cap_used),
                 thr=float(thr),
-                top=topN[: min(len(topN), 5)],
+                z_mode=z_mode,
+                top=topN[: min(len(topN), 10)],
             )
             st.success("✅ Analiz tamamlandı ve tarama geçmişine kaydedildi.")
 
@@ -270,18 +291,36 @@ if submitted:
 # HISTORY
 # -------------------------
 st.divider()
-st.subheader("🕓 Tarama Geçmişi (Kaydedilen konumlar)")
+st.subheader("🕓 Tarama Geçmişi")
 
 hist = load_history()
 if not hist:
     st.info("Henüz tarama geçmişi yok.")
 else:
-    # son 10
-    for idx, h in enumerate(hist[-10:][::-1], start=1):
-        st.markdown(f"**{idx})** {h.get('ts','Tarih yok')}  —  📍 `{h.get('lat')}, {h.get('lon')}`  —  çap `{h.get('cap_m')}`m  —  eşik `{h.get('thr')}`")
+    for idx, h in enumerate(hist[-15:][::-1], start=1):
+        name = h.get("name") or "(İsimsiz)"
+        ts = h.get("ts") or "Tarih yok"
+        lat = h.get("lat")
+        lon = h.get("lon")
+        capm = h.get("cap_m")
+        thr = h.get("thr")
+        zm = h.get("z_mode") or ""
+
+        st.markdown(f"**{idx}) {name}** — {ts}")
+        st.write(f"📍 {lat}, {lon} | çap: {capm} m | eşik: {thr} | {zm}")
+
+        # Kayda “Haritada Aç”
+        if lat is not None and lon is not None:
+            maps_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+            st.link_button("🌍 Bu Taramayı Haritada Aç", maps_url, use_container_width=True)
+
         top = h.get("top") or []
         if top:
-            with st.expander("Top anomaliler"):
+            with st.expander("Top anomaliler (peak z / derinlik)"):
                 for j, t in enumerate(top, start=1):
                     tag = "POS" if t.get("type") == "POS" else "NEG"
-                    st.write(f"#{j} {tag} | z={t.get('peak_z'):.2f} | {t.get('target_lat'):.6f}, {t.get('target_lon'):.6f}")
+                    st.write(
+                        f"#{j} {tag} | peak z={t.get('peak_z', 0):.2f} | derinlik={t.get('rel_depth', 0):.2f} | "
+                        f"{t.get('target_lat', 0):.6f}, {t.get('target_lon', 0):.6f}"
+                    )
+        st.divider()
